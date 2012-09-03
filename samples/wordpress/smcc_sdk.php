@@ -20,7 +20,7 @@ add_action( 'init', array(new SmccSdkApi, 'respond') );
 
 class SmccSdkApi { // {{{
 
-    protected $implemented_actions = array('messages.create', 'messages.list', 'messages.show', 'messages.destroy', 'messages.publish', 'messages.unpublish', 'threads.create', 'threads.destroy', 'threads.show');
+    protected $implemented_actions = array('messages.create', 'messages.list', 'messages.show', 'messages.destroy', 'messages.publish', 'messages.unpublish', 'threads.create', 'threads.list', 'threads.show', 'threads.destroy');
     protected $implemented_options = array('messages.no_title');
 
     public function __construct() {
@@ -198,6 +198,17 @@ class SmccSdkApi { // {{{
         }
     }
 
+    public function threads_list() {
+        $posts = array();
+        $last_id = $this->get_since_id();
+        foreach ($this->db->get_posts_since($last_id) as $post) {
+            $user = $this->db->get_user($post['post_author']);
+            $posts[] = $this->format->thread($post, $this->format->user($user));
+        }
+        $this->success_response($posts);
+    }
+
+
     public function threads_destroy() {
         $response = $this->db->posts_delete($this->get_id());
         $this->success_response($response ? true : false);
@@ -332,6 +343,12 @@ class SmccSdkDb { // {{{
     public function get_comment_user($email) {
         $sql = "SELECT * FROM {$this->table_comments()} WHERE comment_author_email = %s ORDER BY comment_ID DESC";
         return $this->find_first($sql, $email);
+    }
+
+    public function get_posts_since($last_post_id = null) {
+        $last_post_id = empty($last_post_id) ? 0 : $last_post_id;
+        $sql = "SELECT * FROM {$this->table_posts()} as p WHERE p.post_status='publish' AND p.ID > %d ORDER BY p.ID DESC";
+        return $this->find($sql, $last_post_id);
     }
 
     public function get_post($id) {
