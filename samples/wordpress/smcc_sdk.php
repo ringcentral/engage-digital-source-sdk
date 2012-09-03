@@ -237,6 +237,7 @@ class SmccSdkFormat { // {{{
             'created_at' => $post['post_date'],
             'custom_actions' => array(),
             'custom_fields' => array(),
+            'display_url' => get_permalink($post['ID']),
             'title' => $post['post_title'],
             'id' => $post['ID'],
             'updated_at' => $post['post_modified']
