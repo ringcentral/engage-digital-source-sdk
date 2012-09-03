@@ -20,7 +20,7 @@ add_action( 'init', array(new SmccSdkApi, 'respond') );
 
 class SmccSdkApi { // {{{
 
-    protected $implemented_actions = array('messages.create', 'messages.list', 'messages.show', 'messages.destroy', 'threads.create', 'threads.destroy', 'threads.show');
+    protected $implemented_actions = array('messages.create', 'messages.list', 'messages.show', 'messages.destroy', 'messages.publish', 'messages.unpublish', 'threads.create', 'threads.destroy', 'threads.show');
     protected $implemented_options = array('messages.no_title');
 
     public function __construct() {
@@ -167,6 +167,26 @@ class SmccSdkApi { // {{{
         }
     }
 
+    public function messages_publish() {
+        $res = wp_set_comment_status($this->get_id(), '1');
+
+        if ($res) {
+            $this->messages_show();
+        } else {
+            $this->error_response('Could not publish message');
+        }
+    }
+
+    public function messages_unpublish() {
+        $res = wp_set_comment_status($this->get_id(), '0');
+
+        if ($res) {
+            $this->messages_show();
+        } else {
+            $this->error_response('Could not unpublish message');
+        }
+    }
+
     public function threads_create() {
         $post = $this->db->posts_create($this->get_body());
         $user = $this->db->get_user($post['post_author']);
@@ -225,6 +245,13 @@ class SmccSdkFormat { // {{{
             'id' => $comment['comment_ID'],
             'in_reply_to_id' => $comment['comment_parent'],
             'ip' => $comment['comment_author_IP'],
+            /*
+             * comment approved - 1
+             * comment pending - 0
+             * comment spam - spam
+             * comment trash - trash
+             */
+            'published' => $comment['comment_approved'] == '1',
             'thread_id' => $comment['comment_post_ID'],
             'updated_at' => null
         );
@@ -278,7 +305,7 @@ class SmccSdkDb { // {{{
 
     public function get_comments_since($last_comment_id = null) {
         $last_comment_id = empty($last_comment_id) ? 0 : $last_comment_id;
-        $sql = "SELECT * FROM {$this->table_comments()} as t LEFT JOIN {$this->table_users()} as u ON t.user_id = u.ID WHERE t.comment_id > %d ORDER BY t.comment_id DESC";
+        $sql = "SELECT * FROM {$this->table_comments()} as t LEFT JOIN {$this->table_users()} as u ON t.user_id = u.ID WHERE (t.comment_approved='0' or t.comment_approved='1') AND t.comment_id > %d ORDER BY t.comment_id DESC";
         return $this->find($sql, $last_comment_id);
     }
 
