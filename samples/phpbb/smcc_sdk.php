@@ -460,6 +460,7 @@ function post_to_sdk($data) {
         'id' => $data['post_id'],
         'in_reply_to_id' => null,
         'ip' => $data['poster_ip'],
+        'published' => true,
         'title' => $data['post_subject'],
         'thread_id' => $data['topic_id'],
         'updated_at' => empty($data['post_edit_time']) ? ftime($data['post_time']) : ftime($data['post_edit_time'])
