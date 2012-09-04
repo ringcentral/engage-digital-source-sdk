@@ -20,7 +20,20 @@ add_action( 'init', array(new SmccSdkApi, 'respond') );
 
 class SmccSdkApi { // {{{
 
-    protected $implemented_actions = array('messages.create', 'messages.list', 'messages.show', 'messages.destroy', 'messages.publish', 'messages.unpublish', 'threads.create', 'threads.list', 'threads.show', 'threads.destroy');
+    protected $implemented_actions = array(
+        'messages.create',
+        'messages.list',
+        'messages.show',
+        'messages.destroy',
+        'messages.publish',
+        'messages.unpublish',
+        'threads.create',
+        'threads.list',
+        'threads.show',
+        'threads.destroy',
+        'threads.publish',
+        'threads.unpublish'
+    );
     protected $implemented_options = array('messages.no_title');
 
     public function __construct() {
@@ -221,6 +234,26 @@ class SmccSdkApi { // {{{
         $this->success_response($this->format->thread($post, $this->format->user($user)));
     }
 
+    public function threads_publish() {
+        $res = wp_update_post(array('ID' => $this->get_id(), 'post_status' => 'publish'));
+
+        if ($res) {
+            $this->threads_show();
+        } else {
+            $this->error_response('Could not publish thread');
+        }
+    }
+
+    public function threads_unpublish() {
+        $res = wp_update_post(array('ID' => $this->get_id(), 'post_status' => 'pending'));
+
+        if ($res) {
+            $this->threads_show();
+        } else {
+            $this->error_response('Could not publish thread');
+        }
+    }
+
 }
 // }}}
 
@@ -238,6 +271,7 @@ class SmccSdkFormat { // {{{
             'custom_actions' => array(),
             'custom_fields' => array(),
             'display_url' => get_permalink($post['ID']),
+            'published' => $post['post_status'] == 'publish',
             'title' => $post['post_title'],
             'id' => $post['ID'],
             'updated_at' => $post['post_modified']
@@ -348,7 +382,7 @@ class SmccSdkDb { // {{{
 
     public function get_posts_since($last_post_id = null) {
         $last_post_id = empty($last_post_id) ? 0 : $last_post_id;
-        $sql = "SELECT * FROM {$this->table_posts()} as p WHERE p.post_status='publish' AND p.ID > %d ORDER BY p.ID DESC";
+        $sql = "SELECT * FROM {$this->table_posts()} as p WHERE (p.post_status='publish' or p.post_status='pending') AND p.ID > %d ORDER BY p.ID DESC";
         return $this->find($sql, $last_post_id);
     }
 
