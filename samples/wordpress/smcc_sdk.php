@@ -16,112 +16,120 @@ License: GPL2
 define('SMCC_SDK_ACCESS_TOKEN', 'EilW295myMpycBTQkaxeyEMhccBGs9yII4MgV4kwb6CTgcCUpOdOsUj5m1wiWZ7');
 
 // Handle the request if it is SDK related, do nothing otherwise.
-add_action( 'init', array(new SmccSdkApi, 'respond') );
+add_action( 'init', array(new SmccSdkApi, 'run') );
 
 class SmccSdkApi { // {{{
 
-    protected $implemented_actions = array(
-        'messages.create',
-        'messages.list',
-        'messages.show',
-        'messages.destroy',
-        'messages.publish',
-        'messages.unpublish',
-        'threads.create',
-        'threads.list',
-        'threads.show',
-        'threads.destroy',
-        'threads.publish',
-        'threads.unpublish'
+    protected $request_body = null;
+    protected $decoded_request_body = null;
+
+    protected $implementation = array(
+        'objects' => array(
+            'messages' => array('create', 'list', 'show', 'delete', 'publish', 'unpublish'),
+            'threads' => array('create', 'list', 'show', 'delete', 'publish', 'unpublish')
+        ),
+        'options' => array('messages.no_title')
     );
-    protected $implemented_options = array('messages.no_title');
 
     public function __construct() {
         $this->db = new SmccSdkDb();
         $this->format = new SmccSdkFormat();
     }
 
-    public function respond() {
+    public function run() {
         if (!$this->is_sdk_request()) {
             return;
         }
 
-        $this->validate_token();
+        date_default_timezone_set(get_option('timezone_string'));
+
+        $this->validate_request();
 
         $action = $this->get_action();
-        if ($action == 'implementation.info' || in_array($action, $this->implemented_actions)) {
+        list($object, $verb) = explode('.', $action);
+        if ($action == 'implementation.info' ||
+            (array_key_exists($object, $this->implementation['objects']) &&
+                in_array($verb, $this->implementation['objects'][$object]))) {
             $method = str_replace('.', '_', $action);
             $this->$method();
         } else {
-            $this->error_response('Invalid action');
+            $this->respond_error('Invalid action');
         }
     }
 
     public function get_action() {
-        return @$_GET['smcc_sdk_action'];
+        $body = $this->get_body();
+        return $body['action'];
+    }
+
+    public function get_params() {
+        $body = $this->get_body();
+        return $body['params'];
     }
 
     public function get_body() {
-        return json_decode(file_get_contents('php://input'), true);
+        if ($this->decoded_request_body === null) {
+            $this->decoded_request_body = json_decode($this->get_raw_body(), true);
+        }
+        return $this->decoded_request_body;
     }
 
-    public function get_id() {
-        return @$_GET['smcc_sdk_id'];
-    }
-
-    public function get_since_id() {
-        return @$_GET['smcc_sdk_since_id'];
+    public function get_raw_body() {
+        if ($this->request_body === null) {
+            $this->request_body = file_get_contents('php://input');
+        }
+        return $this->request_body;
     }
 
     public function is_sdk_request() {
-        $action = $this->get_action();
-        return !empty($action);
+        return !empty($_GET['smcc_sdk']);
     }
 
-    public function validate_token() {
-        $token = @$_GET['smcc_sdk_access_token'];
-        if ($token != SMCC_SDK_ACCESS_TOKEN) {
-            $this->error_response('Invalid access token');
+    public function validate_request() {
+        $signature = @$_SERVER['HTTP_X_SMCC_SIGNATURE'];
+        if ($this->signature($this->get_raw_body()) != $signature) {
+            $this->respond_error('Invalid signature');
         }
     }
 
-    public function success_response($payload) {
-        $this->output(array('success' => true, 'payload' => $payload));
+    public function signature($text) {
+        $signature = hash_hmac('sha512', $text, SMCC_SDK_ACCESS_TOKEN, $raw = true);
+        return str_replace("\n", '', base64_encode($signature));
     }
 
-    public function error_response($message) {
-        $this->output(array('success' => false, 'errorMessage' => $message));
-    }
-
-    public function output($array) {
+    public function respond($object) {
+        $body = json_encode($object);
         header('Content-type: application/json');
-        echo json_encode($array);
+        header('X-SMCC-SIGNATURE: ' . $this->signature($body));
+        echo $body;
         exit;
     }
 
+    public function respond_error($message) {
+        header('Status: 400 Bad Request');
+        $this->respond($message);
+    }
+
     public function implementation_info() {
-        $this->success_response(array(
-            'actions' => $this->implemented_actions,
-            'options' => $this->implemented_options
-        ));
+        $this->respond($this->implementation);
     }
 
     public function messages_create() {
-        $message = $this->get_body();
+        $params = $this->get_params();
 
         $data = array(
-            'comment_post_ID' => $message['thread_id'],
-            'comment_content' => $message['body'],
-            'comment_parent' => $message['in_reply_to_id'],
-            'comment_date' => $message['created_at'],
+            'comment_post_ID' => $params['thread_id'],
+            'comment_content' => $params['body'],
+            'comment_parent' => $params['in_reply_to_id'],
+            'comment_date' => SmccSdkFormat::parse_time($params['created_at']),
             'comment_approved' => 1
         );
 
-        $user = $this->db->get_user($message['author_id']);
+        $user = $this->db->get_user($params['author_id']);
         if (empty($user)) {
-            $user = $this->db->get_comment_user($message['author_id']);
+            $user = $this->db->get_comment_user($params['author_id']);
             if (empty($user)) {
-                $this->error_response('Could not create the comment');
+                $this->respond_error('Could not create the comment');
             }
             $data['comment_author'] = $user['comment_author'];
             $data['comment_author_email'] = $user['comment_author_email'];
@@ -139,20 +147,29 @@ class SmccSdkApi { // {{{
 
         $comment = $this->db->comments_create($data);
         if (!$comment) {
-            $this->error_response('Could not create the comment');
+            $this->respond_error('Could not create the comment');
         } else {
-            $this->success_response($this->format->message($comment, $formatted_user));
+            $this->respond($this->format->message($comment, $formatted_user));
         }
     }
 
-    public function messages_destroy() {
-        $response = $this->db->delete_comment($this->get_id());
-        $this->success_response($response ? true : false);
+    public function messages_delete() {
+        $params = $this->get_params();
+
+        $comment = $this->db->get_comment($params['id']);
+        $response = $this->db->delete_comment($params['id']);
+        if ($response) {
+            $this->respond($this->format->message(comment));
+        } else {
+            $this->respond_error('Could not delete content');
+        }
     }
 
     public function messages_list() {
+        $params = $this->get_params();
+
         $messages = array();
-        $last_id = $this->get_since_id();
+        $last_id = $params['since_id'];
         foreach ($this->db->get_comments_since($last_id) as $comment) {
             if (!empty($comment['user_id'])) {
                 $user = $this->format->user($comment);
@@ -163,94 +180,112 @@ class SmccSdkApi { // {{{
                 $messages[] = $this->format->message($comment, $user);
             }
         }
-        $this->success_response($messages);
+        $this->respond($messages);
     }
 
     public function messages_show() {
-        $comment = $this->db->get_comment($this->get_id());
+        $params = $this->get_params();
+
+        $comment = $this->db->get_comment($params['id']);
         if (!empty($comment['user_id'])) {
             $user = $this->format->user($comment);
         } else {
             $user = $this->format->comment_user($comment);
         }
         if ($user) {
-            $this->success_response($this->format->message($comment, $user));
+            $this->respond($this->format->message($comment, $user));
         } else {
-            $this->error_response('Invalid user');
+            $this->respond_error('Invalid user');
         }
     }
 
     public function messages_publish() {
-        $res = wp_set_comment_status($this->get_id(), '1');
+        $params = $this->get_params();
+
+        $res = wp_set_comment_status($params['id'], '1');
 
         if ($res) {
             $this->messages_show();
         } else {
-            $this->error_response('Could not publish message');
+            $this->respond_error('Could not publish message');
         }
     }
 
     public function messages_unpublish() {
-        $res = wp_set_comment_status($this->get_id(), '0');
+        $params = $this->get_params();
+
+        $res = wp_set_comment_status($params['id'], '0');
 
         if ($res) {
             $this->messages_show();
         } else {
-            $this->error_response('Could not unpublish message');
+            $this->respond_error('Could not unpublish message');
         }
     }
 
     public function threads_create() {
-        $post = $this->db->posts_create($this->get_body());
+        $params = $this->get_params();
+        $params['created_at'] = SmccSdkFormat::parse_time($params['created_at']);
+        $post = $this->db->posts_create($params);
         $user = $this->db->get_user($post['post_author']);
 
-        if (!$post) {
-            $this->error_response('Could not create post');
+        if ($post) {
+            $this->respond($this->format->thread($post, $this->format->user($user)));
         } else {
-            $this->success_response($this->format->thread($post, $this->format->user($user)));
+            $this->respond_error('Could not create post');
         }
     }
 
     public function threads_list() {
+        $params = $this->get_params();
+
         $posts = array();
-        $last_id = $this->get_since_id();
+        $last_id = $params['since_id'];
         foreach ($this->db->get_posts_since($last_id) as $post) {
             $user = $this->db->get_user($post['post_author']);
             $posts[] = $this->format->thread($post, $this->format->user($user));
         }
-        $this->success_response($posts);
+        $this->respond($posts);
     }
 
 
-    public function threads_destroy() {
-        $response = $this->db->posts_delete($this->get_id());
-        $this->success_response($response ? true : false);
+    public function threads_delete() {
+        $params = $this->get_params();
+
+        $response = $this->db->posts_delete($params['id']);
+        $this->respond($response ? true : false);
     }
 
     public function threads_show() {
-        $post = $this->db->get_post($this->get_id());
+        $params = $this->get_params();
+
+        $post = $this->db->get_post($params['id']);
         $user = $this->db->get_user($post['post_author']);
 
-        $this->success_response($this->format->thread($post, $this->format->user($user)));
+        $this->respond($this->format->thread($post, $this->format->user($user)));
     }
 
     public function threads_publish() {
-        $res = wp_update_post(array('ID' => $this->get_id(), 'post_status' => 'publish'));
+        $params = $this->get_params();
+
+        $res = wp_update_post(array('ID' => $params['id'], 'post_status' => 'publish'));
 
         if ($res) {
             $this->threads_show();
         } else {
-            $this->error_response('Could not publish thread');
+            $thir->respond_error('Could not publish thread');
         }
     }
 
     public function threads_unpublish() {
-        $res = wp_update_post(array('ID' => $this->get_id(), 'post_status' => 'pending'));
+        $params = $this->get_params();
+
+        $res = wp_update_post(array('ID' => $params['id'], 'post_status' => 'pending'));
 
         if ($res) {
             $this->threads_show();
         } else {
-            $this->error_response('Could not publish thread');
+            $this->respond_error('Could not publish thread');
         }
     }
 
@@ -264,26 +299,28 @@ class SmccSdkFormat { // {{{
 
     public function thread($post, $user) {
         return array(
+            'actions' => array('delete', 'publish', 'unpublish'),
             'author' => $user,
             'body' => $post['post_content'],
             'categories' => array(),
-            'created_at' => $post['post_date'],
+            'created_at' => self::output_time($post['post_date']),
             'custom_actions' => array(),
             'custom_fields' => array(),
             'display_url' => get_permalink($post['ID']),
             'published' => $post['post_status'] == 'publish',
             'title' => $post['post_title'],
             'id' => $post['ID'],
-            'updated_at' => $post['post_modified']
+            'updated_at' => self::output_time($post['post_modified'])
         );
     }
 
     public function message($comment, $user) {
         $attributes = array(
+            'actions' => array('delete', 'publish', 'unpublish'),
             'author' => $user,
             'body' => $comment['comment_content'],
             'categories' => array(),
-            'created_at' => $comment['comment_date'],
+            'created_at' => self::output_time($comment['comment_date']),
             'custom_actions' => array(),
             'custom_fields' => array(),
             'latitude' => null,
@@ -307,7 +344,7 @@ class SmccSdkFormat { // {{{
     public function user($user) {
         return array(
             'avatar_url' => null,
-            'created_at' => $user['user_registered'],
+            'created_at' => self::output_time($user['user_registered']),
             'email' => $user['user_email'],
             'latitude' => null,
             'longitude' => null,
@@ -331,7 +368,7 @@ class SmccSdkFormat { // {{{
         }
 
         return array(
-            'created_at' => $comment['comment_date'],
+            'created_at' => self::output_time($comment['comment_date']),
             'email' => $comment['comment_author_email'],
             'id' => $comment['comment_author_email'],
             'ip' => $comment['comment_author_IP'],
@@ -339,6 +376,16 @@ class SmccSdkFormat { // {{{
             'screenname' => $comment['comment_author'],
             'url' => $comment['comment_author_url']
         );
+    }
+
+    public static function output_time($timestr) {
+        $time = strtotime($timestr);
+        return date(DATE_ISO8601, $time);
+    }
+
+    public static function parse_time($timestr) {
+        $time = strtotime($timestr);
+        return date('Y-m-d H:i:s', $time);
     }
 
 }
