@@ -1,17 +1,29 @@
 <?php
-/**
- * @package SMCC_SDK
- * @version 1.0
- */
 /*
-Plugin Name: SMCC SDK
-Plugin URI: http://wordpress.org/extend/plugins/smcc-sdk/
-Description: Example implementation of the Dimelo SDK.
-Author: Dimelo
+Plugin Name: Dimelo SMCC SDK
+Plugin URI: https://github.com/dimelo/sdk
+Description: The simplest way to integrate your Wordpress blog with Dimelo's SMCC.
 Version: 1.0
+Author: Dimelo, SA
 Author URI: http://www.dimelo.com/
-License: GPL2
+License: Apache License, Version 2.0
 */
+
+/**
+ * Copyright 2012 Dimelo, SA
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ * 
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
 define('SMCC_SDK_ACCESS_TOKEN', 'EilW295myMpycBTQkaxeyEMhccBGs9yII4MgV4kwb6CTgcCUpOdOsUj5m1wiWZ7');
 
