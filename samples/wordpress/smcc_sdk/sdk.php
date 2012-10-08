@@ -57,9 +57,8 @@ class SmccSdk {
 	 *
      * @return string Date in the ISO8601 format.
      */
-    public static function format_time($timestr) {
-        $time = strtotime($timestr);
-        return date(DATE_ISO8601, $time);
+    public static function to_sdk_time($timestr) {
+        return date(DATE_ISO8601, strtotime($timestr));
     }
 
 	/**
@@ -70,13 +69,12 @@ class SmccSdk {
      * time functions.
      *
 	 * @param string $timestr Time string in the ISO8601 format.
-	 * @param string $format  Format to convert the date to.
+	 * @param string $format  Format to convert the date to. Default is `Y-m-d H:i:s`.
 	 *
 	 * @return string Date in the specified format.
 	 */
-    public static function parse_time($timestr, $format = 'Y-m-d H:i:s') {
-        $time = strtotime($timestr);
-        return date($format, $time);
+    public static function from_sdk_time($timestr, $format = 'Y-m-d H:i:s') {
+        return date($format, strtotime($timestr));
     }
 
 	/**
@@ -96,7 +94,7 @@ class SmccSdk {
 	 */
     public function get_params() {
         $body = $this->get_body();
-        return $body['params'];
+        return array_key_exists('params', $body) ? $body['params'] : array();
     }
 
 	/**
@@ -105,10 +103,7 @@ class SmccSdk {
 	 * @return bool
 	 */
     public function is_valid_request() {
-        $signature = @$_SERVER['HTTP_X_SMCC_SIGNATURE'];
-        if ($this->signature($this->get_raw_body()) != $signature) {
-            $this->respond_error('Invalid signature');
-        }
+        return $this->signature($this->get_raw_body()) === @$_SERVER['HTTP_X_SMCCSDK_SIGNATURE'];
     }
 
 	/**
@@ -130,7 +125,7 @@ class SmccSdk {
 	 *
 	 * @param string $message Error message.
 	 */
-    public function respond_error($message) {
+    public function error($message) {
         header('Status: 400 Bad Request');
         echo $message;
         exit;
