@@ -1,1 +1,1 @@
-Please see the Wiki for documentation.
+Please see the [[wiki]] for documentation.
