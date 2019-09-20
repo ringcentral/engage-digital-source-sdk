@@ -1,4 +1,6 @@
-# SMCC SDK
+# RingCentral Engage Digital Source SDK for PHP
+
+Engage Digital Social Media Contact Center (SMCC) SDK
 
 * Please see the [Wiki](https://github.com/ringcentral/engage-digital-source-sdk/wiki) for documentation.
 * Please see the [Wordpress plugin](https://github.com/dimelo/wordpress-smcc-sdk) as an example implementation.
